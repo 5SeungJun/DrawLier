@@ -30,6 +30,7 @@ public class DrawServer extends JFrame {
     private Socket client_socket; // accept() 에서 생성된 client 소켓, AcceptServer에서 지역변수로 선언해도 됩니다.
     private Vector<UserService> UserVec = new Vector<>(); // 연결된 사용자를 저장할 벡터, ArrayList와 같이 동적 배열을 만들어주는 컬렉션 객체
     private static final int BUF_LEN = 128; // Windows 처럼 BUF_LEN 을 정의
+    JLabel [] playerSlot = new JLabel[4];
 
     /**
      * Launch the application.
@@ -122,13 +123,29 @@ public class DrawServer extends JFrame {
         clientCount.setBounds(111, 170, 199, 26);
         contentPane.add(clientCount);
 
-
-
-
+        //타이머 라벨
         timeLabel.setBounds(12, 230, 87, 26);
         contentPane.add(timeLabel);
+
+        //플레이어 현황 GUI
+        JPanel playerPanel = new JPanel();
+        playerPanel.setLayout(new GridLayout(2,2, 10, 10));
+        playerPanel.setBounds(12, 300, 464, 150);
+        playerPanel.setBorder(BorderFactory.createTitledBorder("플레이어 현황"));
+        playerPanel.setBackground(Color.WHITE);
+        //플레이어 현황 슬롯 생성
+        //JLabel [] playerSlot = new JLabel[4];
+        for(int i = 0; i < 4; i++){
+            playerSlot[i] = new JLabel("대기중", SwingConstants.CENTER);
+            playerSlot[i].setOpaque(true);
+            playerSlot[i].setBackground(new Color(230, 230, 230));
+            playerSlot[i].setBorder(BorderFactory.createLineBorder(Color.LIGHT_GRAY));
+            playerPanel.add(playerSlot[i]);
+        }
+        contentPane.add(playerPanel);
+
+        //방 만들기 UI
         JButton btnServerStart = new JButton("방 만들기"); //서버 스타트
-        //JButton btnGameStart = new JButton("게임 시작"); //게임 스타트
         btnServerStart.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
                 try {
@@ -144,8 +161,15 @@ public class DrawServer extends JFrame {
             }
         });
         btnServerStart.setBounds(12, 40, 464, 35);
-
         contentPane.add(btnServerStart);
+
+        //게임 시작 UI
+        JButton btnGameStart = new JButton("게임 시작"); //게임 스타트
+        btnGameStart.setBounds(12, 480, 464, 35);
+        contentPane.add(btnGameStart);
+        JLabel lblGameStart = new JLabel("4명이 모두 접속해야 게임을 시작할 수 있습니다.");
+        lblGameStart.setBounds(110, 510, 464, 26);
+        contentPane.add(lblGameStart);
     }
 
 
@@ -172,10 +196,12 @@ public class DrawServer extends JFrame {
                     // User 당 하나씩 Thread 생성
                     UserService new_user = new UserService(client_socket);
                     UserVec.add(new_user); // 새로운 참가자 배열에 추가
+                    int index = UserVec.indexOf(new_user);
                     SwingUtilities.invokeLater(() -> {
                         clientCount.setText(UserVec.size() + " / 4");
+                        playerSlot[index].setText(new_user.UserName);
+                        playerSlot[index].setBackground(new Color(180, 220, 255));
                     });
-                    //AppendText("사용자 입장. 현재 참가자 수 " + UserVec.size());
                     new_user.start(); // 만든 객체의 스레드 실행
                 } catch (IOException e) {
                     //AppendText("!!!! accept 에러 발생... !!!!");
@@ -200,10 +226,6 @@ public class DrawServer extends JFrame {
     // 이 UserService 스레드는 '소켓 객체'를 이용해서 실제 특정 유저와 메시지를 주고 받는 기능을 수행하는 스레드
     // 이 스레드 클래스의 run() 메소드 안의 dis.readUTF()에서 대기하다가 메시지가 들어오면 -> Write All로 전체 접속한 사용자한테 전송(단톡방)
     class UserService extends Thread {
-        //참고로 서버와 클라이언트 사이의 1:1 채팅이 아니기 때문에
-        //(서버에서는) 서버가 스스로 메시지를 먼저 보낼 일이 없으니(한 클라이언트한테 받은 메시지를 다른 클라이언트들한테 전달만 하면 됩니다)
-        //따라서 run() 안에 작성되어 있는 '보내는 기능을 수행하는 코드'와 '받는 기능을 수행하는 코드'를 이 서버에서는 스레드로 분리할 필요가 없음
-
         private InputStream is;
         private OutputStream os;
         private DataInputStream dis;
@@ -278,7 +300,15 @@ public class DrawServer extends JFrame {
                         dos.close();
                         dis.close();
                         client_socket.close();
+                        int index = UserVec.indexOf(this);
                         UserVec.removeElement(this); // 에러가 난 현재 객체를 벡터에서 지운다
+                        SwingUtilities.invokeLater(() ->{
+                            clientCount.setText(UserVec.size() + " / 4");
+                            if(index >= 0){
+                                playerSlot[index].setText("대기 중");
+                                playerSlot[index].setBackground(new Color(230, 230, 230));
+                            }
+                        });
                         //AppendText("사용자 퇴장. 남은 참가자 수 " + UserVec.size());
                         break;
                     } catch (Exception ee) {
