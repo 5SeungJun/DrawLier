@@ -4,12 +4,14 @@ import java.awt.*;
 import java.awt.event.*;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.colorchooser.AbstractColorChooserPanel;
 import java.io.*;
 import java.net.Socket;
 
 /**
  * 게임 클라이언트 뷰
  * 수정사항: 방장 권한에 따른 '게임 시작' 버튼 제어 로직 강화
+ * 수정사항: 지우개, 굵기 조절 기능 추가
  */
 public class JavaChatClientView extends JFrame {
 
@@ -39,8 +41,12 @@ public class JavaChatClientView extends JFrame {
     private Timer gameTimer;
     private int remainingTime;
 
-    // 그리기 색상 (기본 검정)
+    private JButton btnColorPicker; // 색상 선택 버튼 필드 추가 (툴 강조용)
+    private JButton btnEraserTool; //지우개
+
     private Color currentColor = Color.BLACK;
+    private int strokeWidth = 2; // 그리기 굵기 (기본값: 2)
+    private final Color DRAWING_BG_COLOR = Color.WHITE;
 
     public JavaChatClientView(String userName, Socket socket, DataInputStream dis,
                               DataOutputStream dos, GameRoom room, boolean isHost) {
@@ -110,36 +116,96 @@ public class JavaChatClientView extends JFrame {
             }
         });
     }
+    //선택된 버튼 강조 기능
+    private void updateToolButtons(JButton activeTool) {
+        if (btnColorPicker != null) btnColorPicker.setBorder(UIManager.getBorder("Button.border"));
+        if (btnEraserTool != null) btnEraserTool.setBorder(UIManager.getBorder("Button.border"));
+
+        if (activeTool != null) {
+            activeTool.setBorder(BorderFactory.createLineBorder(Color.GRAY, 3));
+        }
+    }
 
     private JPanel createToolPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         panel.setBackground(new Color(240, 240, 240));
 
-        JButton btnBlack = new JButton("검정");
-        btnBlack.setBackground(Color.BLACK);
-        btnBlack.setForeground(Color.WHITE);
-        btnBlack.addActionListener(e -> currentColor = Color.BLACK);
-
-        JButton btnRed = new JButton("빨강");
-        btnRed.setBackground(Color.RED);
-        btnRed.setForeground(Color.WHITE);
-        btnRed.addActionListener(e -> currentColor = Color.RED);
-
-        JButton btnBlue = new JButton("파랑");
-        btnBlue.setBackground(Color.BLUE);
-        btnBlue.setForeground(Color.WHITE);
-        btnBlue.addActionListener(e -> currentColor = Color.BLUE);
-
-        JButton btnEraser = new JButton("전체 지우기");
-        btnEraser.addActionListener(e -> {
-            drawingPanel.clear();
-            sendProtocol("/clear");
+        // --- 굵기 선택 콤보박스 ---
+        String[] widths = {"1", "2", "4", "8", "12"};
+        JComboBox<String> strokeSelector = new JComboBox<>(widths);
+        strokeSelector.setSelectedItem("2");
+        strokeSelector.addActionListener(e -> {
+            try {
+                strokeWidth = Integer.parseInt((String)strokeSelector.getSelectedItem());
+            } catch (NumberFormatException ex) {
+                strokeWidth = 2;
+            }
         });
 
-        panel.add(btnBlack);
-        panel.add(btnRed);
-        panel.add(btnBlue);
-        panel.add(btnEraser);
+        panel.add(new JLabel("굵기:"));
+        panel.add(strokeSelector);
+
+        // --- 색상 선택 버튼 (JColorChooser 호출) ---
+        btnColorPicker = new JButton("색상 선택");
+        btnColorPicker.setPreferredSize(new Dimension(120, 30));
+
+        btnColorPicker.setBackground(currentColor);
+        btnColorPicker.setForeground(Color.WHITE);
+        btnColorPicker.setOpaque(true);
+        btnColorPicker.setBorderPainted(true);
+        updateToolButtons(btnColorPicker);
+
+        btnColorPicker.addActionListener(e -> {
+            updateToolButtons(btnColorPicker);
+
+            final JColorChooser colorChooser = new JColorChooser(currentColor);
+            colorChooser.setPreviewPanel(new JPanel());
+
+            AbstractColorChooserPanel[] panels = colorChooser.getChooserPanels();
+            //Swatches 탭만 활성화하기 위한 로직
+            for (AbstractColorChooserPanel c : panels) {
+                if (!c.getDisplayName().equals("Swatches")) {
+                    colorChooser.removeChooserPanel(c);
+                }
+            }
+
+            JDialog dialog = JColorChooser.createDialog(
+                    this,
+                    "색상 팔레트",
+                    true,
+                    colorChooser,
+                    a -> {
+                        Color selectedColor = colorChooser.getColor();
+                        if (selectedColor != null) {
+                            currentColor = selectedColor;
+                            btnColorPicker.setBackground(currentColor);
+                            btnColorPicker.setForeground(Color.WHITE);
+                        }
+                    },
+                    b -> {}
+            );
+            dialog.setVisible(true);
+        });
+
+        // --- 지우개 툴 버튼 (부분 지우개) ---
+        btnEraserTool = new JButton("지우개");
+        btnEraserTool.setPreferredSize(new Dimension(80, 30));
+        btnEraserTool.addActionListener(e -> {
+            currentColor = DRAWING_BG_COLOR;
+            updateToolButtons(btnEraserTool);
+        });
+
+        // --- 전체 지우기 버튼 ---
+        JButton btnClearAll = new JButton("전체 지우기");
+        btnClearAll.addActionListener(e -> {
+            drawingPanel.clear();
+            sendProtocol("/clear");
+            updateToolButtons(null);
+        });
+
+        panel.add(btnColorPicker);
+        panel.add(btnEraserTool);
+        panel.add(btnClearAll);
 
         return panel;
     }
@@ -511,13 +577,13 @@ public class JavaChatClientView extends JFrame {
                 int currY = e.getY();
 
                 screenGraphic.setColor(currentColor);
-                screenGraphic.setStroke(new BasicStroke(2));
+                screenGraphic.setStroke(new BasicStroke(strokeWidth)); //굵기 적용
                 screenGraphic.drawLine(prevX, prevY, currX, currY);
                 repaint();
 
-                String msg = String.format("/draw %d %d %d %d %d %d %d",
+                String msg = String.format("/draw %d %d %d %d %d %d %d %d",
                         prevX, prevY, currX, currY,
-                        currentColor.getRed(), currentColor.getGreen(), currentColor.getBlue());
+                        currentColor.getRed(), currentColor.getGreen(), currentColor.getBlue(), strokeWidth);
                 sendProtocol(msg);
 
                 prevX = currX;
